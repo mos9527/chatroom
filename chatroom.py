@@ -2,7 +2,7 @@ from datetime import datetime
 from http import HTTPStatus
 import http
 import logging
-from logging import INFO
+from logging import INFO, WARNING
 from urllib.parse import parse_qs
 from pywebhost import PyWebHost, Request, VerbRestrictionWrapper, WriteContentToRequest
 from pywebhost.modules import JSONMessageWrapper, ReadContentToBuffer, BinaryMessageWrapper
@@ -11,7 +11,7 @@ from pywebhost.modules.websocket import WebsocketSession, WebsocketSessionWrappe
 
 import coloredlogs,os,pywebhost,mimetypes,time
 coloredlogs.DEFAULT_LOG_FORMAT='%(hostname)s [%(name)s] %(asctime)s - %(message)s'
-coloredlogs.install(INFO)
+coloredlogs.install(WARNING)
 # For coloring logs
 port = 3300
 server = PyWebHost(('', port))
@@ -122,7 +122,7 @@ class Chat(WebsocketSession):
     username_blacklist = {'server', 'remote'}
     def im(self, name):
         if name in Chat.username_blacklist:
-            self.send_srv_msg(msg='<error>Invalid username %s - Username was perserved</error>' % name)
+            self.send_srv_msg(msg='<error>Invalid username %s - Username was rerserved</error>' % name)
         elif name in self.sess_users:
             self.send_srv_msg(msg='<error>Invalid username %s - Username was taken</error>' % name)
         else:
@@ -133,7 +133,7 @@ class Chat(WebsocketSession):
 
     def unblock(self, opt=None):
         self.unblock_state = not self.unblock_state
-        self.send_srv_msg(msg='<success>Turned %s HTML Tags</success>' % ['on','off'][self.unblock_state])        
+        self.send_srv_msg(msg='<success>Turned %s HTML Tags</success>' % ['on','off'][not self.unblock_state])        
         return True
 
     def users(self, opt=None):
@@ -182,11 +182,13 @@ class Chat(WebsocketSession):
             self.send(b)
         self.send_srv_msg(type='login',msg=self.name)
         self.send_srv_msg(type='announce', msg=['<b>Help: </b><code>!%s</code>: %s' % item for item in self.command_whitelist.items()])                
-        logging.info('%s Connected -- %s' % (self.name,self.request.useragent_string()))
+        self.users()
+        print('%s : Connected via %s' % (self.name,self.request.useragent_string()))
                 
     def onReceive(self, frame: bytearray):    
         message = frame.decode()
         if message and not self.onCommand(message):
+            print('%s : %s' % (self.name,message))
             boardcast(self.cln_msg(message))
 
 @server.route('/.*')
@@ -219,9 +221,8 @@ class FileSession(Session):
         disposition = parse_qs(disposition)
         filename = disposition['filename'][0]
         file_key = self.new_uid
-        print(self.get('name') or self.session_id ,'Uploading',filename)    
         file = File(os.path.join(TEMP_PATH,file_key),length,filename,file_type,object_type,file_key)
-        print(file.temp_file_path)
+        print(self.get('name') or self.session_id , ': Uploading',filename,'->',file.temp_file_path)
         boardcast(Chat.msg(sender=self.get('name') or self.session_id ,type=object_type,msg=file_key))
         files[file_key] = file
         # save it locally
@@ -245,7 +246,7 @@ class FileSession(Session):
         if not key in files.keys():
             return request.send_error(HTTPStatus.NOT_FOUND,'Resource not found')
         file : File = files[key]
-        print(self.get('name') or self.request.useragent_string() + ' -- Anonymous --','Downloading',file.file_name)   
+        print(self.get('name') or self.request.useragent_string() + ' -- Anonymous --',': Downloading',file.file_name)   
         while not file.bytes_written >= file.file_size:
             time.sleep(0.1) # wait till upload finishes        
         request.send_response(200)
@@ -271,5 +272,5 @@ def index(initator,request: Request, content):
     # Indexes folders of local path and renders a webpage
     WriteContentToRequest(request, 'html/chatroom.html', mime_type='text/html')
 
-logging.info(f'Serving...http://localhost:{port} {server.protocol_version}')
+print(f'Serving...http://localhost:{port} {server.protocol_version}')
 server.serve_forever()

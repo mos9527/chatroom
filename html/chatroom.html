@@ -14,6 +14,10 @@
             overflow-wrap: break-word;
         }
 
+        .btn-group   > button {
+            min-width: 5em;
+        }
+
         #messageInput {
             position: fixed;
             width: 100%;
@@ -63,12 +67,13 @@
         }
 
         .chat{            
-            transform: scale3d(1,0,0)
+            transform: scaleX(0)
         }
 
         .chat-shown {
-            transition: transform 0.1s ease-out;  
-            transform: scale3d(1,1,1)
+            transition: transform cubic-bezier(0.075, 0.82, 0.165, 1) 0.1s;
+            transform-origin: top left;
+            transform: scaleX(1)
         }
 
     </style>
