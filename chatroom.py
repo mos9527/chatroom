@@ -3,13 +3,14 @@ from http import HTTPStatus
 import http
 import logging
 from logging import INFO, WARNING
+from os.path import isfile
 from urllib.parse import parse_qs
 from pywebhost import PyWebHost, Request, VerbRestrictionWrapper, WriteContentToRequest
 from pywebhost.modules import JSONMessageWrapper, ReadContentToBuffer, BinaryMessageWrapper
 from pywebhost.modules.session import Session, SessionWrapper
 from pywebhost.modules.websocket import WebsocketSession, WebsocketSessionWrapper
 
-import coloredlogs,os,pywebhost,mimetypes,time
+import coloredlogs,os,pywebhost,mimetypes,time,base64
 coloredlogs.DEFAULT_LOG_FORMAT='%(hostname)s [%(name)s] %(asctime)s - %(message)s'
 coloredlogs.install(WARNING)
 # For coloring logs
@@ -238,9 +239,9 @@ class FileSession(Session):
         if not key in files.keys():
             return request.send_error(HTTPStatus.NOT_FOUND,'Resource not found')
         return files[key].dict()
-    
-    @VerbRestrictionWrapper(['GET'])
-    @JSONMessageWrapper(read=False)
+    temp_img_path_format = '%s_thumb'
+    temp_img_default = base64.b64decode('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')
+    @VerbRestrictionWrapper(['GET'])    
     def _file_get(self,request: Request, content):
         key = request.query['key'][0]             
         if not key in files.keys():
@@ -250,8 +251,23 @@ class FileSession(Session):
         while not file.bytes_written >= file.file_size:
             time.sleep(0.1) # wait till upload finishes        
         request.send_response(200)
-        request.send_header('Content-Disposition','filename="%s"' % file.file_name)
-        WriteContentToRequest(request,open(file.temp_file_path,'rb'),True,file.file_size,mime_type=file.file_type)
+        request.send_header('Content-Disposition','filename="%s"' % file.file_name)        
+        if 'thumb' in request.query:
+            # fetching thumbnails for images
+            from PIL import Image
+            temp_img_path = FileSession.temp_img_path_format % file.temp_file_path
+            if not isfile(temp_img_path):
+                # creating one if object does not exist
+                try:                    
+                    thumb : Image.Image = Image.open(file.temp_file_path)
+                    thumb.thumbnail((128,128))
+                    thumb.save(temp_img_path,"JPEG")                    
+                except:
+                    # not a image
+                    return WriteContentToRequest(request,FileSession.temp_img_default,mime_type='image/jpg')                    
+            return WriteContentToRequest(request,temp_img_path,mime_type='image/jpg')
+        else:
+            return WriteContentToRequest(request,file.temp_file_path,partial_acknowledge=True,mime_type=file.file_type)
     
 @server.route('/ws')
 @WebsocketSessionWrapper()

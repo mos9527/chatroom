@@ -11,6 +11,10 @@ function T_user(user,level){
     return `<span class="badge badge-${level || 'info'}" style="margin-left:5px">${user}</span>`
 }
 
+function T_loading(){
+    return `<div class="loading-dummy"><div class="spinner-grow" role="status"></div></div>`
+}
+
 function T_file(file) {    
     const fileImgs = {
         image:'fas fa-file-image',
@@ -28,7 +32,7 @@ function T_file(file) {
 }
 
 function T_image(src) {
-    return `<img class="rounded float-left img-fluid" src="${src}"></img><div class="spinner-grow" role="status"></div>`
+    return `<img loading=lazy class="rounded float-left img-fluid" src="${src}&thumb=1"></img>`
 }
 
 function T_announce(message) {
@@ -175,9 +179,17 @@ function onServerMessage(e) {
                 },
                 image: () => {
                     var url = 'file/get?key=' + content.msg
-                    var image = T_image(url)
+                    var image = T_image(url) + T_loading()
                     var chat = $(T_chat(content.sender, image, content.time))
-                    chat.find('img').on('load', function () { chat.find('.spinner-grow').remove() })
+                    chat.find('img')
+                        .on('load', function () { chat.find('.loading-dummy').remove() })
+                        .on('error',function () { chat.find('.loading-dummy').remove() })
+                        .on('click',function (){
+                        if(!chat.find('.loading-dummy').length){
+                            chat.append(T_loading())
+                            this.src = this.src.replace('&thumb=1','')
+                        }                        
+                    })
                     Prepend(chat)
                 },
                 undefined: () => {
