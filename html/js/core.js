@@ -35,6 +35,10 @@ function T_image(src) {
     return `<img loading=lazy class="rounded float-left img-fluid" src="${src}&thumb=1"></img>`
 }
 
+function T_video(src) {
+    return `<div class="media"><video controls src="${src}"></video></media>`
+}
+
 function T_announce(message) {
     return `${message}`
 }
@@ -192,6 +196,12 @@ function onServerMessage(e) {
                     })
                     Prepend(chat)
                 },
+                video: () => {
+                    var url = 'file/get?key=' + content.msg
+                    var video = T_video(url)
+                    var chat = $(T_chat(content.sender, video, content.time))
+                    Prepend(chat)
+                },
                 undefined: () => {
                     // For normal user messages
                     var chat = $(T_chat(content.sender, content.msg, content.time))
@@ -236,11 +246,15 @@ setInterval(function heartBeat() {
     server.send('')
 }, HEARTBEAT_INTERVAL)
 // Annouce scroller
+function check_arg(){
+    var target = arguments[0];
+    for(var i=1;i<arguments.length;i++) if(target.search(arguments[i]) >= 0) return arguments[i]
+    return undefined    
+}
 function upload(files) {
     for (file of files) {
-        var uploadType = $('#file').attr('upload-type')
-        uploadType = uploadType == 'auto' ? (file.type.search('image') ? 'image' : file) : uploadType
-        if (uploadType == 'image' && file.type.search('image')==-1) return; // trying to upload non-image file to file type
+        var uploadType = $('#file').attr('upload-type') || 'file'
+        if (uploadType == 'image' && !check_arg(file.type,'image','video')) return; else uploadType = check_arg(file.type,'image','video')
         fetch('file/upload', {
             method: 'POST',
             headers: {
