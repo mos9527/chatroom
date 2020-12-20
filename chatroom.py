@@ -26,7 +26,7 @@ for f in os.listdir(TEMP_PATH):
     if os.path.isfile(fullpath):
         logging.info('Removing temp file %s' % f)
         try:
-            # os.remove(fullpath)
+            os.remove(fullpath)
             pass
         except IOError:
             logging.error('Cannot remove file %s' % f)
