@@ -254,7 +254,8 @@ function check_arg(){
 function upload(files) {
     for (file of files) {
         var uploadType = $('#file').attr('upload-type') || 'file'
-        if (uploadType == 'image' && !check_arg(file.type,'image','video')) return; else uploadType = check_arg(file.type,'image','video')
+        if (uploadType == 'image')
+            if (!check_arg(file.type,'image','video')) return; else uploadType = check_arg(file.type,'image','video')
         fetch('file/upload', {
             method: 'POST',
             headers: {
