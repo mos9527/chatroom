@@ -177,7 +177,7 @@ class Chat(WebsocketSession):
                     return False
                 return getattr(self, command)(content)
 
-    def onOpen(self):
+    def onOpen(self,request : Request=None,content=None):
         global boardcasts
         for b in boardcasts:
             self.send(b)
@@ -205,8 +205,9 @@ def index(initator,request: Request, content):
 
 class FileSession(Session):
 
-    def onOpen(self):
-        self.request.send_response(200)
+    def onOpen(self, request: Request, content):
+        request.send_response(200)
+        
     @VerbRestrictionWrapper(['POST'])
     @BinaryMessageWrapper(read=False)
     def _file_upload(self,request: Request, content):
