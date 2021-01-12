@@ -205,7 +205,7 @@ def index(initator,request: Request, content):
 
 class FileSession(Session):
 
-    def onOpen(self, request: Request, content):
+    def onCreate(self, request: Request, content):
         request.send_response(200)
         
     @VerbRestrictionWrapper(['POST'])
