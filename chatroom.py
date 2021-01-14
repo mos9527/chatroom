@@ -177,6 +177,9 @@ class Chat(WebsocketSession):
                     return False
                 return getattr(self, command)(content)
 
+    def onCreate(self, request, content):
+        if not self.session_id: self.set_session_id(path='/')
+
     def onOpen(self,request : Request=None,content=None):
         global boardcasts
         for b in boardcasts:
@@ -206,6 +209,7 @@ def index(initator,request: Request, content):
 class FileSession(Session):
 
     def onCreate(self, request: Request, content):
+        if not self.session_id: self.set_session_id(path='/')
         request.send_response(200)
         
     @VerbRestrictionWrapper(['POST'])
@@ -279,9 +283,6 @@ def websocket(initator,request: Request, content):
 @server.route('/file/.*')
 @SessionWrapper()
 def file(initator,request: Request, content):
-    # if not request.cookies[SESSION_KEY]:
-    #     request.send_error(http.HTTPStatus.FORBIDDEN,'Request not authorized')
-    # else:
     return FileSession
 
 @server.route('/')
