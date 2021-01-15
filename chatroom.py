@@ -177,11 +177,9 @@ class Chat(WebsocketSession):
                     return False
                 return getattr(self, command)(content)
 
-    def onCreate(self, request, content):
-        if not self.session_id: self.set_session_id(path='/')
-
     def onOpen(self,request : Request=None,content=None):
         global boardcasts
+        if not self.session_id: self.set_session_id(path='/')
         for b in boardcasts:
             self.send(b)
         self.send_srv_msg(type='login',msg=self.name)
