@@ -209,7 +209,7 @@ class FileSession(Session):
     def onCreate(self, request: Request, content):
         if not self.session_id: self.set_session_id(path='/')
         request.send_response(200)
-        
+        request.send_header('Access-Control-Allow-Origin','*')
     @VerbRestrictionWrapper(['POST'])
     @BinaryMessageWrapper(read=False)
     def _file_upload(self,request: Request, content):
