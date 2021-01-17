@@ -266,9 +266,10 @@ class FileSession(Session):
                     thumb.thumbnail((128,128))
                     thumb.save(temp_img_path,"JPEG")                    
                 except:
-                    # not a image
-                    return WriteContentToRequest(request,FileSession.temp_img_default,mime_type='image/jpg')                    
+                    # failed to parse
+                    return WriteContentToRequest(request,file.temp_file_path,partial_acknowledge=True,mime_type=file.file_type)
             return WriteContentToRequest(request,temp_img_path,mime_type='image/jpg')
+            # writing temp image
         else:
             return WriteContentToRequest(request,file.temp_file_path,partial_acknowledge=True,mime_type=file.file_type)
     
