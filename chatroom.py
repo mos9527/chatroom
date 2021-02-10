@@ -95,7 +95,10 @@ class Chat(WebsocketSession):
     @property
     def name(self):
         if not 'name' in self.keys():
-            self.name = self.ip
+            # setting default name
+            device = self.request.useragent_string()
+            device = device.split('(')[1].split(')')[0]
+            self.name = '%s %s' % (device,self.ip)
         return self['name']
     @name.setter
     def name(self, newname):
