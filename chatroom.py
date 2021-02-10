@@ -96,7 +96,7 @@ class Chat(WebsocketSession):
     def name(self):
         if not 'name' in self.keys():
             # setting default name
-            device = self.request.useragent_string()
+            device = self.request.useragent_string
             device = device.split('(')[1].split(')')[0]
             self.name = '%s %s' % (device,self.ip)
         return self['name']
@@ -188,7 +188,7 @@ class Chat(WebsocketSession):
         self.send_srv_msg(type='login',msg=self.name)
         self.send_srv_msg(type='announce', msg=['<b>Help: </b><code>!%s</code>: %s' % item for item in self.command_whitelist.items()])                
         self.users()
-        print('%s : Connected via %s' % (self.name,self.request.useragent_string()))
+        print('%s : Connected via %s' % (self.name,self.request.useragent_string))
                 
     def onReceive(self, frame: bytearray):    
         message = frame.decode()
@@ -253,7 +253,7 @@ class FileSession(Session):
         if not key in files.keys():
             return request.send_error(HTTPStatus.NOT_FOUND,'Resource not found')
         file : File = files[key]
-        print(self.get('name') or self.request.useragent_string() + ' -- Anonymous --',': Downloading',file.file_name)   
+        print(self.get('name') or self.request.useragent_string + ' -- Anonymous --',': Downloading',file.file_name)   
         while not file.bytes_written >= file.file_size:
             time.sleep(0.1) # wait till upload finishes        
         request.send_response(200)
