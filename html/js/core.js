@@ -67,6 +67,14 @@ function T_chat_alt(heading, content, footer) {
     str += `<p class="mb-1">${content}</p></div>`
     return str
 }
+
+function T_subtext(content) {
+    var str = '<p class="stext">'
+    str += content
+    str += '</p>'
+    return str
+}
+
 function Prepend(message){
     $('#chats').prepend(message)
     setTimeout(()=>{
@@ -112,6 +120,9 @@ function onServerMessage(e) {
                     var users='';
                     content.msg.filter(user => {users += T_user(user,user == username ? 'primary' : 'info');return true;})
                     Alert('Users: ' + users)
+                },
+                filedownload : () => {
+                    Prepend(T_subtext(`${content.msg.user} Downloaded <a href='file/get?key=${content.msg.file.key}'>${content.msg.file.name}</a>`))
                 },
                 undefined: () => {
                     // For normal server messages 

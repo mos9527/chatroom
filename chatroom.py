@@ -4,6 +4,7 @@ import http
 import logging
 from logging import INFO, WARNING
 from os.path import isfile
+import queue
 from urllib.parse import parse_qs
 from pywebhost import PyWebHost, Request, VerbRestrictionWrapper, WriteContentToRequest
 from pywebhost.modules import JSONMessageWrapper, ReadContentToBuffer, BinaryMessageWrapper
@@ -41,6 +42,7 @@ class File():
         self.file_key=file_key
         self.ready = False
         self.stream = open(self.temp_file_path,'wb+')
+        self.downloader = set()        
     def write(self,chunk):        
         self.bytes_written += self.stream.write(chunk)
         return self.bytes_written
@@ -58,9 +60,10 @@ class File():
             'bytes_written':self.bytes_written,
             'file_type':self.file_type,
             'object_type':self.object_type,
-            'ready':self.ready
+            'ready':self.ready,
+            'downloader':list(self.downloader)
         }
-
+    downloader : set
 boardcasts = [{'sender': 'server','type':'startup',
                'time': time_string()}]
 
@@ -213,6 +216,7 @@ class FileSession(Session):
         if not self.session_id: self.set_session_id(path='/')
         request.send_response(200)
         request.send_header('Access-Control-Allow-Origin','*')
+    
     @VerbRestrictionWrapper(['POST'])
     @BinaryMessageWrapper(read=False)
     def _file_upload(self,request: Request, content):
@@ -253,7 +257,12 @@ class FileSession(Session):
         if not key in files.keys():
             return request.send_error(HTTPStatus.NOT_FOUND,'Resource not found')
         file : File = files[key]
-        print(self.get('name') or self.request.useragent_string + ' -- Anonymous --',': Downloading',file.file_name)   
+        self_name = self.get('name')
+        print(self_name or self.request.useragent_string + ' -- Anonymous --',': Downloading',file.file_name)   
+        if not self_name in file.downloader:
+            # boardcast download event
+            boardcast(Chat.srv_msg(msg={'file':file.dict(),'user':self_name},type='filedownload'))
+        file.downloader.add(self_name)
         while not file.bytes_written >= file.file_size:
             time.sleep(0.1) # wait till upload finishes        
         request.send_response(200)
