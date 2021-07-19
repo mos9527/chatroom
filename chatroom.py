@@ -258,10 +258,7 @@ class FileSession(Session):
             return request.send_error(HTTPStatus.NOT_FOUND,'Resource not found')
         file : File = files[key]
         self_name = self.get('name')
-        print(self_name or self.request.useragent_string + ' -- Anonymous --',': Downloading',file.file_name)   
-        if not self_name in file.downloader:
-            # boardcast download event
-            boardcast(Chat.srv_msg(msg={'file':file.dict(),'user':self_name},type='filedownload'))
+        print(self_name or self.request.useragent_string + ' -- Anonymous --',': Downloading',file.file_name)           
         file.downloader.add(self_name)
         while not file.bytes_written >= file.file_size:
             time.sleep(0.1) # wait till upload finishes        
@@ -283,6 +280,9 @@ class FileSession(Session):
             return WriteContentToRequest(request,temp_img_path,mime_type='image/jpg')
             # writing temp image
         else:
+            if not self_name in file.downloader:
+                # boardcast download event
+                boardcast(Chat.srv_msg(msg={'file':file.dict(),'user':self_name},type='filedownload'))
             return WriteContentToRequest(request,file.temp_file_path,partial_acknowledge=True,mime_type=file.file_type)
     
 @server.route('/ws')
