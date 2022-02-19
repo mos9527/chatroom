@@ -1,6 +1,9 @@
+from asyncore import read
 from datetime import datetime
 from http import HTTPStatus
+import json
 from os.path import isfile
+from pprint import pprint
 from threading import Thread
 from typing import List   
 from urllib.parse import parse_qs
@@ -68,17 +71,18 @@ class File():
             ', '.join(self.downloader)
         )
     downloader : set
-boardcasts = [{'sender': 'server','type':'startup',
-               'time': time_string()}]
 
+boardcasts = [{'sender': 'server','type':'startup','time': time_string()}]
 files = {}
-
-def boardcast(message):
+def reset_boardcast(by=None,note=None,refresh_all=True):
     global boardcasts
-    boardcasts.append(message)
-    for ws in server.websockets:
-        ws.send(message)
-
+    boardcasts = [
+        boardcasts[0],  # server startup line
+        {'sender': 'server', 'msg': '<warning>%s Erased the chat %s</warning>' % (
+            by, ': <pre>%s<pre/>' % note if note else 'and left without a word.')}
+    ]
+    for ws in server.websockets:ws.send(ChatSession.rmt_msg(type='refresh'))
+    return True
 class ChatSession(WebsocketSession):
     logger = logging.getLogger('ChatSession')
     @staticmethod
@@ -131,7 +135,7 @@ class ChatSession(WebsocketSession):
         return [sess['name'] for sess in self.request.server.websockets if 'name' in sess.keys()]
 
 
-    username_blacklist = {'server', 'remote'}
+    username_blacklist = {'server', 'remote', 'The Alpine'}
     def im(self, name):
         if name in ChatSession.username_blacklist:
             self.send_srv_msg(msg='<error>Invalid username %s - Username was rerserved</error>' % name)
@@ -152,15 +156,9 @@ class ChatSession(WebsocketSession):
         self.send_srv_msg(type='users', msg=self.online_users)
         return True
 
+    @staticmethod
     def erase(self, note):
-        global boardcasts
-        boardcasts = [
-            boardcasts[0],  # server startup line
-            {'sender': 'server', 'msg': '<warning>%s Erased the chat %s</warning>' % (
-                self.name, ': <pre>%s<pre/>' % note if note else 'and left without a word.')}
-        ]
-        for ws in self.request.server.websockets:ws.send(self.rmt_msg(type='refresh'))
-        return True
+        reset_boardcast(by=self.name,note=note)
 
     def end(self,opt):
         return self.close() or True
@@ -168,7 +166,7 @@ class ChatSession(WebsocketSession):
     command_whitelist = {
         'im': 'Rename yourself',
         # 'unblock': 'Enable/Disable HTML Tags parsing',
-        'erase': 'Erase the chat log',
+        # 'erase': 'Erase the chat log',
         'users':'Show other online users',    
         'end':'Disconnect from the server'
     }
@@ -192,7 +190,7 @@ class ChatSession(WebsocketSession):
         global boardcasts
         if not self.session_id: self.set_session_id(path='/')
         if self.get('banned-until',None) and self.get('banned-until') > time.time():
-            self.send_srv_msg(msg='<error>You\'re still banned from this server : %s (until %ss)</error>' % (
+            self.send_srv_msg(msg='<error>You\'re still banned from this server : %s (for %ss)</error>' % (
                 self.get('banned-reason','(no reason given)'),
                 int(self.get('banned-until') - time.time())
             ))
@@ -213,6 +211,15 @@ class ChatSession(WebsocketSession):
     def __repr__(self) -> str:
         return '<ChatSession IP=%s SessionId=%s %s>' % (self.ip,self.session_id,
         ', '.join(['%s=%s' % (k,v) for k,v in dict(self).items()]))
+
+def get_sessions() -> List[ChatSession]:
+        return getattr(server,'websockets',[])
+
+def boardcast(message):
+    global boardcasts
+    boardcasts.append(message)
+    for ws in get_sessions():
+        ws.send(message)
 
 @server.route('/.*')
 def _index_static(initator,request: Request, content):
@@ -321,9 +328,7 @@ if __name__ == '__main__':
         logging.warning('! Cookies will NOT work on localhost (RFC2109)')
         server.serve_forever()
     tServer = Thread(target=_serve,name='Server',daemon=True)
-    tServer.start()        
-    def get_sessions() -> List[ChatSession]:
-        return getattr(server,'websockets',[])
+    tServer.start()            
     print('* Chatroom CLI Management Console *')
     print('* Note : This help message will only be shown ONCE!\n')
     # User Management
@@ -344,6 +349,7 @@ if __name__ == '__main__':
     def by_id(sid):
         return filter(lambda i:sid in i.session_id,get_sessions())
     print('''-- USER FILTERS
+        * Filters that applies to online users (excluding banned ones since they cannot connect)
         by_name(username) : Pick users by username (if contain)
         by_ip(ip) : Pick user by ip
         by_id(id) : Pick users by id (if contain)
@@ -355,22 +361,27 @@ if __name__ == '__main__':
     def kick(filter,reason=''):
         for session in filter:
             session : ChatSession
-            session.srv_msg(msg="You are kicked from the server by the admin : %s" % reason or '(no reason given)')
+            session.send_srv_msg(msg="You are kicked from the server : %s" % (reason or '(no reason given)'))
             session.close()
             print('! Kicked',session)
     def ban(filter,duration=30,reason=''):    
         for session in filter:
             session : ChatSession
-            session.srv_msg(msg="You are banned from the server by the admin : %s" % reason or '(no reason given)')
+            session.send_srv_msg(msg="You are banned from the server : %s" % (reason or '(no reason given)'))
             session['banned-reason'] = reason
             session['banned-until'] = time.time() + int(duration)
             session.close()
             print('! Banned',session,'for %ss' % duration) 
+    def rename(filter,name_to=''):
+        for session in filter:
+            session.name = name_to
+            session.send_srv_msg(msg="You are now : %s" % name_to)                        
     print('''-- USER OPs
         * Selections are made by User Filters (see above)
         unblock(user-filter) : Allow selected users to send raw HTML
         kick(user-filter,reason) : Kicks selected users
         ban(user-filter,duration=30,reason) : Ban selected users
+        rename(user-filter,name_to) : Rename user
     ''')
     # File Management
     print('''- FILE MANAGEMENT
@@ -401,6 +412,25 @@ if __name__ == '__main__':
             to = os.path.join(to,file.file_name)
             print('Copying %s -> %s' % (file.temp_file_path,file.file_name))
             copyfile(file.temp_file_path,to)    
+    # Misc
+    def say(msg):
+        return boardcast(ChatSession.msg(sender='The Alpine',msg=msg))
+    def logs():
+        pprint(boardcasts,indent=4)
+    def erase(note=''):
+        reset_boardcast(by='The Alpine',note=note)
+    def save(to='chat.json'):
+        return open(to,encoding='utf-8',mode='w').write(json.dumps(boardcasts,ensure_ascii=False,indent=4))
+    def load(frm='chat.json'):
+        global boardcasts
+        boardcasts = json.loads(open(frm,encoding='utf-8').read())
+    print('''- MISC OPs
+        say(message) : Say something as The Alpine
+        logs() : View current full chat log
+        erase(note) : Clear current chat log, and leave a message
+        save(path) : Save current log to file
+        load(path) : Load log from file to restore chats
+    ''')
     # The main thread spawns an interactive terminal for more administrative operations
     from code import interact
     interact(banner='* Console is now ready (Press Ctrl+D to exit).',local=locals())

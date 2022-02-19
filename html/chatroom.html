@@ -87,6 +87,22 @@
             font-size: small;
             margin: 10px;
         }
+        .alpine {
+    	    text-align: center;	        
+            background: linear-gradient(to right,#095fab 30%, #25abe8 50%, #095fab 70%);
+            background-size: auto auto;
+            background-clip: border-box;            
+            background-size: 200% auto;                        
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: textclip 5s ease-in infinite;
+            display: inline-block;        
+        }
+        @keyframes textclip {
+	        to {
+        		background-position: 200% center;
+    	    }
+        }
 
     </style>
 </head>
