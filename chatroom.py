@@ -15,7 +15,7 @@ from pywebhost.modules.websocket import WebsocketSession, WebsocketSessionWrappe
 
 import coloredlogs,os,pywebhost,mimetypes,time,http,logging,base64,sys
 coloredlogs.DEFAULT_LOG_FORMAT='%(hostname)s [%(name)s] %(asctime)s - %(message)s'
-coloredlogs.install(30)
+coloredlogs.install(20)
 # For coloring logs
 port = int(sys.argv[-1]) if len(sys.argv) == 2 else 3300
 server = PyWebHost(('', port))
