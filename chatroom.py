@@ -15,7 +15,7 @@ from pywebhost.modules.websocket import WebsocketSession, WebsocketSessionWrappe
 
 import coloredlogs,os,pywebhost,mimetypes,time,http,logging,base64,sys
 coloredlogs.DEFAULT_LOG_FORMAT='%(hostname)s [%(name)s] %(asctime)s - %(message)s'
-coloredlogs.install(20)
+coloredlogs.install(30)
 # For coloring logs
 port = int(sys.argv[-1]) if len(sys.argv) == 2 else 3300
 server = PyWebHost(('', port))
@@ -200,6 +200,10 @@ class ChatSession(WebsocketSession):
         self.send_srv_msg(type='login',msg=self.name)
         self.send_srv_msg(type='announce', msg=['<b>Help: </b><code>!%s</code>: %s' % item for item in self.command_whitelist.items()])                
         self.users()
+        self['UA'] = self.request.useragent_string
+        self['IP'] = self.ip
+        self['ID'] = self.session_id
+        self['online'] = True        
         self.logger.info('%s : Connected via %s' % (self,self.request.useragent_string))
                 
     def onReceive(self, frame: bytearray):    
@@ -208,17 +212,28 @@ class ChatSession(WebsocketSession):
             self.logger.info('%s : %s' % (self.name,message))
             boardcast(self.cln_msg(message))
 
+    def onClose(self, request=None, content=None):
+        if (request): return
+        self['online'] = False        
+        return super().onClose(request, content)
+    
     def __repr__(self) -> str:
-        return '<ChatSession IP=%s SessionId=%s %s>' % (self.ip,self.session_id,
-        ', '.join(['%s=%s' % (k,v) for k,v in dict(self).items()]))
+        return '<ChatSession IP=%s SessionId=%s Name=%s>' % (self.ip,self.session_id,self.name)
 
-def get_sessions() -> List[ChatSession]:
-        return getattr(server,'websockets',[])
+def get_active_connections() -> List[ChatSession]:
+    return getattr(server,'websockets',[])
+
+def get_sessions() -> List[dict]:
+    return ChatSession._sessions.values()
+
+def get_connection_by_id(sid) -> ChatSession:
+    for conn in get_active_connections():
+        if sid == conn.session_id : return conn
 
 def boardcast(message):
     global boardcasts
     boardcasts.append(message)
-    for ws in get_sessions():
+    for ws in get_active_connections():
         ws.send(message)
 
 @server.route('/.*')
@@ -332,82 +347,91 @@ if __name__ == '__main__':
     print('* Chatroom CLI Management Console *')
     print('* Note : This help message will only be shown ONCE!\n')
     # User Management
-    def lsusr():
-        '''Lists currently online users'''
-        print('= Currently registered users')
-        for session in get_sessions():
-            print(session)
-        print('- Total %s' % len(get_sessions()))
+    def lsu(filter=None):
+        count = 0
+        for session in filter or get_sessions():
+            print('[%s]' % session['ID'],','.join(['%s=%s' % (k,v) for k,v in session.items()]))
+            count += 1
+        print('- Total %s' % count)
     print('''- USER MANAGEMENT
-        lsusr() : List currently online users
+        lsusr(user-filter) : List currently online users
     ''')
     # Filters
-    def by_name(name):
-        return filter(lambda i:name in i.name,get_sessions())
-    def by_ip(ip):
-        return filter(lambda i:ip == i.ip,get_sessions())
-    def by_id(sid):
-        return filter(lambda i:sid in i.session_id,get_sessions())
+    def by_name(name,src=None):
+        return filter(lambda i:name in i['name'],src or get_sessions())
+    def by_ip(ip,src=None):
+        return filter(lambda i:ip == i['IP'],src or get_sessions())
+    def by_id(sid,src=None):
+        return filter(lambda i:sid in i['ID'],src or get_sessions())        
+    def online(src=None):
+        return filter(lambda i:i['online'],src or get_sessions())        
     print('''-- USER FILTERS
-        * Filters that applies to online users (excluding banned ones since they cannot connect)
-        by_name(username) : Pick users by username (if contain)
-        by_ip(ip) : Pick user by ip
-        by_id(id) : Pick users by id (if contain)
+        * Filters that applies to all sessions
+        * Filters can be chained. e.g. by_name('11',online())
+        by_name(username,...) : Pick users by username (if contain)        
+        by_id(id,...) : Pick users by id (if contain)
+        by_ip(ip,...) : Pick user by ip
+        online(...) : All online users
     ''')
     def unblock(filter):    
         for session in filter:
-            session.toggle_unblock()
+            connection = get_connection_by_id(session['ID'])
+            connection.toggle_unblock()
             print('! HTML Parsing for %s : %s' % (session.name,session.unblock_state))
     def kick(filter,reason=''):
         for session in filter:
-            session : ChatSession
-            session.send_srv_msg(msg="You are kicked from the server : %s" % (reason or '(no reason given)'))
-            session.close()
+            connection = get_connection_by_id(session['ID'])
+            connection.send_srv_msg(msg="You are kicked from the server : %s" % (reason or '(no reason given)'))
+            connection.close()
             print('! Kicked',session)
     def ban(filter,duration=30,reason=''):    
         for session in filter:
-            session : ChatSession
-            session.send_srv_msg(msg="You are banned from the server : %s" % (reason or '(no reason given)'))
+            connection = get_connection_by_id(session['ID'])
+            connection.send_srv_msg(msg="You are banned from the server : %s" % (reason or '(no reason given)'))
             session['banned-reason'] = reason
             session['banned-until'] = time.time() + int(duration)
-            session.close()
+            connection.close()
             print('! Banned',session,'for %ss' % duration) 
     def rename(filter,name_to=''):
         for session in filter:
             session.name = name_to
-            session.send_srv_msg(msg="You are now : %s" % name_to)                        
+            connection = get_connection_by_id(session['ID'])
+            connection.send_srv_msg(msg="You are now : %s" % name_to)                        
     print('''-- USER OPs
         * Selections are made by User Filters (see above)
         unblock(user-filter) : Allow selected users to send raw HTML
         kick(user-filter,reason) : Kicks selected users
-        ban(user-filter,duration=30,reason) : Ban selected users
+        ban(user-filter,duration=30,reason) : Ban selected users (set duration belown 0 to unban them!)
         rename(user-filter,name_to) : Rename user
     ''')
     # File Management
     print('''- FILE MANAGEMENT
     * Files are tempoarly stored in "%s"
-        ls() : List currently stored files
+        ls(file-filter) : List currently stored files
     ''' % TEMP_PATH)
-    def ls():
-        for key,file in files.items():
+    def ls(filter=None):
+        count = 0
+        for key,file in filter or files.values():
             print(key,file)
-        print('Total %s' % len(files))
+            count += 1
+        print('Total %s' % count)
     print('''-- FILE FITLERS
-        by_file_name(filename) : Pick files by username (if contain)
-        by_file_name(id) : Pick files by id (if contain)    
+        * Operates like user filters
+        by_file_name(filename,...) : Pick files by username (if contain)
+        by_file_name(id,...) : Pick files by id (if contain)    
     ''')
     # Filters
-    def by_file_name(name):
-        return filter(lambda i:name in i.file_name,files.values())
-    def by_file_id(id):
-        return filter(lambda i:id in i.file_key,files.values())
+    def by_file_name(name,src=None):
+        return filter(lambda i:name in i.file_name,src or files.values())
+    def by_file_id(id,src=None):
+        return filter(lambda i:id in i.file_key,src or files.values())
     print('''-- FILE OPs
     * Selections are made by File Filters (see above)
         export(file-filter,to='.') : Save selected files to a certain location with their original filenames
     ''')
-    def export(files,to='.'):
+    def export(filter,to='.'):
         print('= Currently held files')
-        for file in files:
+        for file in filter:
             file : File
             to = os.path.join(to,file.file_name)
             print('Copying %s -> %s' % (file.temp_file_path,file.file_name))
