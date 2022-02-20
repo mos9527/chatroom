@@ -128,11 +128,11 @@ class ChatSession(WebsocketSession):
 
     @property
     def sess_users(self):
-        return [sess['name'] for key, sess in pywebhost.modules.session._sessions.items() if 'name' in sess.keys()]
+        return [sess['name'] for sess in get_sessions()]
     
     @property
     def online_users(self):
-        return [sess['name'] for sess in self.request.server.websockets if 'name' in sess.keys()]
+        return [sess['name'] for sess in get_active_connections()]
 
 
     username_blacklist = {'server', 'remote', 'The Alpine'}
