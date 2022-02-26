@@ -249,6 +249,10 @@ def _index_static(initator,request: Request, content):
 
 class FileSession(Session):
     logger = logging.getLogger('File')
+    @property
+    def chat_session(self) -> ChatSession:
+        return ChatSession._sessions.get(self.session_id,{})
+
     def onCreate(self, request: Request, content):
         if not self.session_id: self.set_session_id(path='/')
         request.send_response(200)
@@ -270,8 +274,8 @@ class FileSession(Session):
         filename = disposition['filename'][0]
         file_key = self.new_uid
         file = File(os.path.join(TEMP_PATH,file_key),length,filename,file_type,object_type,file_key)
-        self.logger.info((self.get('name') or self.session_id) + ' : Uploading ' + filename + ' -> ' + file.temp_file_path)
-        boardcast(ChatSession.msg(sender=self.get('name') or self.session_id ,type=object_type,msg=file_key))
+        self.logger.info((self.chat_session.get('name') or self.session_id) + ' : Uploading ' + filename + ' -> ' + file.temp_file_path)
+        boardcast(ChatSession.msg(sender=self.chat_session.get('name') or self.session_id ,type=object_type,msg=file_key))
         files[file_key] = file
         # save it locally
         ReadContentToBuffer(self.request,file)
@@ -294,8 +298,8 @@ class FileSession(Session):
         if not key in files.keys():
             return request.send_error(HTTPStatus.NOT_FOUND,'Resource not found')
         file : File = files[key]
-        self_name = self.get('name')
-        self.logger.info((self_name or self.request.useragent_string) + '??' + ' : Downloading '  + file.file_name)
+        self_name = self.chat_session.get('name')
+        self.logger.info((self_name or self.request.useragent_string + '??') + ' : Downloading '  + file.file_name)
         file.downloader.add(self_name)
         while not file.bytes_written >= file.file_size:
             time.sleep(0.1) # wait till upload finishes        
