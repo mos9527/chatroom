@@ -128,11 +128,11 @@ class ChatSession(WebsocketSession):
 
     @property
     def sess_users(self):
-        return [sess['name'] for sess in get_sessions()]
+        return [sess.get('name','Anon') for sess in get_sessions()]
     
     @property
     def online_users(self):
-        return [sess['name'] for sess in get_active_connections()]
+        return [sess.get('name','Anon') for sess in get_active_connections()]
 
 
     username_blacklist = {'server', 'remote', 'The Alpine'}
@@ -461,4 +461,4 @@ if __name__ == '__main__':
     ''')
     # The main thread spawns an interactive terminal for more administrative operations
     from code import interact
-    interact(banner='* Console is now ready (Press Ctrl+D to exit).',local=locals())
+    if len(sys.argv) == 3: interact(banner='* Console is now ready (Press Ctrl+D to exit).',local=locals())
