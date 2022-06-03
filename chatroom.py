@@ -461,4 +461,4 @@ if __name__ == '__main__':
     ''')
     # The main thread spawns an interactive terminal for more administrative operations
     from code import interact
-    if len(sys.argv) == 3: interact(banner='* Console is now ready (Press Ctrl+D to exit).',local=locals())
+    if len(sys.argv) != 3: interact(banner='* Console is now ready (Press Ctrl+D to exit).',local=locals())
