@@ -40,9 +40,18 @@ class File():
         self.file_type,self.object_type = file_type,object_type
         self.bytes_read,self.bytes_written = 0,0        
         self.file_key=file_key
-        self.ready = False
-        self.stream = open(self.temp_file_path,'wb+')
         self.downloader = set()        
+        self.ready = False
+        self.stream_ = None        
+    @property
+    def stream(self):
+        if not self.stream_:
+            self.stream_ = open(self.temp_file_path,'wb+')
+    def finalize(self):
+        self.stream.flush()
+        self.stream.close()
+        self.ready = True
+        self.stream_ = None
     def write(self,chunk):        
         self.bytes_written += self.stream.write(chunk)
         return self.bytes_written
@@ -50,7 +59,8 @@ class File():
         chunk = self.stream.read(size)
         self.bytes_read += len(chunk)        
         return chunk
-    def seek(self,*a,**k):return self.stream.seek(*a,**k)
+    def seek(self,*a,**k):
+        return self.stream.seek(*a,**k)
     def dict(self) -> str:
         return {
             'key':self.file_key,
@@ -62,8 +72,7 @@ class File():
             'object_type':self.object_type,
             'ready':self.ready,
             'downloader':list(self.downloader)
-        }
-    downloader : set
+        }    
 boardcasts = [{'sender': 'server','type':'startup',
                'time': time_string()}]
 
@@ -239,8 +248,7 @@ class FileSession(Session):
         # save it locally
         ReadContentToBuffer(self.request,file)
         # end of our session        
-        file.stream.flush()
-        file.ready=True        
+        file.finalize() 
         return file_key
     @VerbRestrictionWrapper(['GET'])
     @JSONMessageWrapper(read=False)
