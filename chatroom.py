@@ -1,21 +1,23 @@
+from asyncore import read
 from datetime import datetime
 from http import HTTPStatus
-import http
-import logging
-from logging import INFO, WARNING
+import json
 from os.path import isfile
-import queue
+from pprint import pprint
+from threading import Thread
+from typing import List   
 from urllib.parse import parse_qs
+from shutil import copyfile
 from pywebhost import PyWebHost, Request, VerbRestrictionWrapper, WriteContentToRequest
 from pywebhost.modules import JSONMessageWrapper, ReadContentToBuffer, BinaryMessageWrapper
 from pywebhost.modules.session import Session, SessionWrapper
 from pywebhost.modules.websocket import WebsocketSession, WebsocketSessionWrapper
 
-import coloredlogs,os,pywebhost,mimetypes,time,base64
+import coloredlogs,os,pywebhost,mimetypes,time,http,logging,base64,sys
 coloredlogs.DEFAULT_LOG_FORMAT='%(hostname)s [%(name)s] %(asctime)s - %(message)s'
-coloredlogs.install(WARNING)
+coloredlogs.install(20)
 # For coloring logs
-port = 3300
+port = int(sys.argv[-1]) if len(sys.argv) == 2 else 3300
 server = PyWebHost(('', port))
 TEMP_PATH = 'temp'
 def time_string():
@@ -25,14 +27,11 @@ if not os.path.exists(TEMP_PATH):os.makedirs(TEMP_PATH)
 for f in os.listdir(TEMP_PATH):
     fullpath = os.path.join(TEMP_PATH,f)
     if os.path.isfile(fullpath):
-        logging.info('Removing temp file %s' % f)
+        logging.warning('Removing temp file %s' % f)
         try:
-            os.remove(fullpath)
-            pass
+            os.remove(fullpath)            
         except IOError:
             logging.error('Cannot remove file %s' % f)
-        
-
 class File():
     def __init__(self,temp_file_path,file_size,file_name,file_type,object_type,file_key='') -> None:
         self.temp_file_path = temp_file_path
@@ -47,6 +46,7 @@ class File():
     def stream(self):
         if not self.stream_:
             self.stream_ = open(self.temp_file_path,'wb+')
+        return self.stream_
     def finalize(self):
         self.stream.flush()
         self.stream.close()
@@ -72,34 +72,45 @@ class File():
             'object_type':self.object_type,
             'ready':self.ready,
             'downloader':list(self.downloader)
-        }    
-boardcasts = [{'sender': 'server','type':'startup',
-               'time': time_string()}]
+        }
+    def __repr__(self) -> str:
+        return '<File %s Size=%s Name=%s Path=%s DL=%s>' % (
+            'Ready' if self.ready else 'Pending',
+            self.file_size,
+            self.file_name,
+            self.temp_file_path,
+            ', '.join(self.downloader)
+        )
+    downloader : set
 
+boardcasts = [{'sender': 'server','type':'startup','time': time_string()}]
 files = {}
-
-def boardcast(message):
+def reset_boardcast(by=None,note=None,refresh_all=True):
     global boardcasts
-    boardcasts.append(message)
-    for ws in server.websockets:
-        ws.send(message)
-
-class Chat(WebsocketSession):
+    boardcasts = [
+        boardcasts[0],  # server startup line
+        {'sender': 'server', 'msg': '<warning>%s Erased the chat %s</warning>' % (
+            by, ': <pre>%s<pre/>' % note if note else 'and left without a word.')}
+    ]
+    for ws in server.websockets:ws.send(ChatSession.rmt_msg(type='refresh'))
+    return True
+class ChatSession(WebsocketSession):
+    logger = logging.getLogger('ChatSession')
     @staticmethod
     def msg(sender,**kwargs):
         return {'sender':sender,'time': time_string(),**kwargs}
 
     @staticmethod
     def rmt_msg(**kwargs):
-        return Chat.msg('remote',**kwargs)
+        return ChatSession.msg('remote',**kwargs)
     @staticmethod
     def srv_msg(**kwargs):
-        return Chat.msg('server',**kwargs)
+        return ChatSession.msg('server',**kwargs)
     def cln_msg(self,msg):
-        return Chat.msg(self.name,msg=msg if self.unblock_state else '<pre>%s</pre>' % msg.replace('<','&lt;').replace('>', '&gt;'))        
+        return ChatSession.msg(self.name,msg=msg if self.unblock_state else '<pre>%s</pre>' % msg.replace('<','&lt;').replace('>', '&gt;'))        
 
     def send_srv_msg(self,**kwargs):
-        self.send(Chat.srv_msg(**kwargs))
+        self.send(ChatSession.srv_msg(**kwargs))
 
     @property
     def ip(self): return f'{self.request.client_address[0]}:{self.request.client_address[1]}'
@@ -128,16 +139,16 @@ class Chat(WebsocketSession):
 
     @property
     def sess_users(self):
-        return [sess['name'] for key, sess in pywebhost.modules.session._sessions.items() if 'name' in sess.keys()]
+        return [sess.get('name','Anon') for sess in get_sessions()]
     
     @property
     def online_users(self):
-        return [sess['name'] for sess in self.request.server.websockets if 'name' in sess.keys()]
+        return [sess.get('name','Anon') for sess in get_active_connections()]
 
 
-    username_blacklist = {'server', 'remote'}
+    username_blacklist = {'server', 'remote', 'The Alpine'}
     def im(self, name):
-        if name in Chat.username_blacklist:
+        if name in ChatSession.username_blacklist:
             self.send_srv_msg(msg='<error>Invalid username %s - Username was rerserved</error>' % name)
         elif name in self.sess_users:
             self.send_srv_msg(msg='<error>Invalid username %s - Username was taken</error>' % name)
@@ -147,7 +158,7 @@ class Chat(WebsocketSession):
             self.send_srv_msg(type='login',msg=self.name)            
         return True
 
-    def unblock(self, opt=None):
+    def toggle_unblock(self, opt=None):
         self.unblock_state = not self.unblock_state
         self.send_srv_msg(msg='<success>Turned %s HTML Tags</success>' % ['on','off'][not self.unblock_state])        
         return True
@@ -156,24 +167,18 @@ class Chat(WebsocketSession):
         self.send_srv_msg(type='users', msg=self.online_users)
         return True
 
+    @staticmethod
     def erase(self, note):
-        global boardcasts
-        boardcasts = [
-            boardcasts[0],  # server startup line
-            {'sender': 'server', 'msg': '<warning>%s Cleared the chat : %s</warning>' % (
-                self.name, note if note else '...')}
-        ]
-        for ws in self.request.server.websockets:ws.send(self.rmt_msg(type='refresh'))
-        return True
+        reset_boardcast(by=self.name,note=note)
 
     def end(self,opt):
         return self.close() or True
 
     command_whitelist = {
         'im': 'Rename yourself',
-        'unblock': 'Enable/Disable HTML Tags parsing',
-        'erase': 'Erase the chat',
-        'users':'Show others online',    
+        # 'unblock': 'Enable/Disable HTML Tags parsing',
+        # 'erase': 'Erase the chat log',
+        'users':'Show other online users',    
         'end':'Disconnect from the server'
     }
     def onCommand(self, command):
@@ -188,28 +193,62 @@ class Chat(WebsocketSession):
                     command, content = command[0], ' '.join(command[1:])
                 else:
                     command, content = command[0], None
-                if not command in list(Chat.command_whitelist.keys()):
+                if not command in list(ChatSession.command_whitelist.keys()):
                     return False
                 return getattr(self, command)(content)
 
     def onOpen(self,request : Request=None,content=None):
         global boardcasts
         if not self.session_id: self.set_session_id(path='/')
+        if self.get('banned-until',None) and self.get('banned-until') > time.time():
+            self.send_srv_msg(msg='<error>You\'re still banned from this server : %s (for %ss)</error>' % (
+                self.get('banned-reason','(no reason given)'),
+                int(self.get('banned-until') - time.time())
+            ))
+            return self.close()
         for b in boardcasts:
             self.send(b)
         self.send_srv_msg(type='login',msg=self.name)
         self.send_srv_msg(type='announce', msg=['<b>Help: </b><code>!%s</code>: %s' % item for item in self.command_whitelist.items()])                
         self.users()
-        print('%s : Connected via %s' % (self.name,self.request.useragent_string))
+        self['UA'] = self.request.useragent_string
+        self['IP'] = self.ip
+        self['ID'] = self.session_id
+        self['online'] = True        
+        self.logger.info('%s : Connected via %s' % (self,self.request.useragent_string))
                 
     def onReceive(self, frame: bytearray):    
         message = frame.decode()
         if message and not self.onCommand(message):
-            print('%s : %s' % (self.name,message))
+            self.logger.info('%s : %s' % (self.name,message))
             boardcast(self.cln_msg(message))
 
+    def onClose(self, request=None, content=None):
+        if (request): return
+        self['online'] = False        
+        return super().onClose(request, content)
+    
+    def __repr__(self) -> str:
+        return '<ChatSession IP=%s SessionId=%s Name=%s>' % (self.ip,self.session_id,self.name)
+
+def get_active_connections() -> List[ChatSession]:
+    return getattr(server,'websockets',[])
+
+def get_sessions() -> List[dict]:
+    return ChatSession._sessions.values()
+
+def get_connection_by_id(sid) -> ChatSession:
+    for conn in get_active_connections():
+        if sid == conn.session_id : return conn
+
+def boardcast(message):
+    global boardcasts
+    boardcasts.append(message)
+    for ws in get_active_connections():
+        ws.send(message)
+
 @server.route('/.*')
-def index(initator,request: Request, content):
+def _index_static(initator,request: Request, content):
     real = 'html' + request.path
     if os.path.isfile(real):
         WriteContentToRequest(request, real,mime_type=mimetypes.guess_type(real)[0])
@@ -220,6 +259,10 @@ def index(initator,request: Request, content):
         request.end_headers()
 
 class FileSession(Session):
+    logger = logging.getLogger('File')
+    @property
+    def chat_session(self) -> ChatSession:
+        return ChatSession._sessions.get(self.session_id,{})
 
     def onCreate(self, request: Request, content):
         if not self.session_id: self.set_session_id(path='/')
@@ -242,8 +285,8 @@ class FileSession(Session):
         filename = disposition['filename'][0]
         file_key = self.new_uid
         file = File(os.path.join(TEMP_PATH,file_key),length,filename,file_type,object_type,file_key)
-        print(self.get('name') or self.session_id , ': Uploading',filename,'->',file.temp_file_path)
-        boardcast(Chat.msg(sender=self.get('name') or self.session_id ,type=object_type,msg=file_key))
+        self.logger.info((self.chat_session.get('name') or self.session_id) + ' : Uploading ' + filename + ' -> ' + file.temp_file_path)
+        boardcast(ChatSession.msg(sender=self.chat_session.get('name') or self.session_id ,type=object_type,msg=file_key))
         files[file_key] = file
         # save it locally
         ReadContentToBuffer(self.request,file)
@@ -265,8 +308,8 @@ class FileSession(Session):
         if not key in files.keys():
             return request.send_error(HTTPStatus.NOT_FOUND,'Resource not found')
         file : File = files[key]
-        self_name = self.get('name')
-        print(self_name or self.request.useragent_string + ' -- Anonymous --',': Downloading',file.file_name)           
+        self_name = self.chat_session.get('name')
+        self.logger.info((self_name or self.request.useragent_string + '??') + ' : Downloading '  + file.file_name)
         file.downloader.add(self_name)
         while not file.bytes_written >= file.file_size:
             time.sleep(0.1) # wait till upload finishes        
@@ -290,24 +333,145 @@ class FileSession(Session):
         else:
             if not self_name in file.downloader:
                 # boardcast download event
-                boardcast(Chat.srv_msg(msg={'file':file.dict(),'user':self_name},type='filedownload'))
+                boardcast(ChatSession.srv_msg(msg={'file':file.dict(),'user':self_name},type='filedownload'))
             return WriteContentToRequest(request,file.temp_file_path,partial_acknowledge=True,mime_type=file.file_type)
     
 @server.route('/ws')
 @WebsocketSessionWrapper()
-def websocket(initator,request: Request, content):
-    return Chat
-    # Starts serving and blocks the current thread
+def _websocket(initator,request: Request, content):
+    return ChatSession    
 
 @server.route('/file/.*')
 @SessionWrapper()
-def file(initator,request: Request, content):
+def _file(initator,request: Request, content):
     return FileSession
 
 @server.route('/')
-def index(initator,request: Request, content):
-    # Indexes folders of local path and renders a webpage
+def _index(initator,request: Request, content):
+    # Indexes folders of local path and 'renders' a webpage    
     WriteContentToRequest(request, 'html/chatroom.html', mime_type='text/html')
 
-print(f'Serving...http://localhost:{port} {server.protocol_version}')
-server.serve_forever()
+if __name__ == '__main__':        
+    def _serve():
+        logging.info(f'- Serving...http://127.0.0.1:{port} {server.protocol_version}')
+        logging.warning('! Cookies will NOT work on localhost (RFC2109)')
+        server.serve_forever()
+    tServer = Thread(target=_serve,name='Server',daemon=True)
+    tServer.start()            
+    print('* Chatroom CLI Management Console *')
+    print('* Note : This help message will only be shown ONCE!\n')
+    # User Management
+    def lsu(filter=None):
+        count = 0
+        for session in filter or get_sessions():
+            print('[%s]' % session['ID'],','.join(['%s=%s' % (k,v) for k,v in session.items()]))
+            count += 1
+        print('- Total %s' % count)
+    print('''- USER MANAGEMENT
+        lsusr(user-filter) : List currently online users
+    ''')
+    # Filters
+    def by_name(name,src=None):
+        return filter(lambda i:name in i['name'],src or get_sessions())
+    def by_ip(ip,src=None):
+        return filter(lambda i:ip == i['IP'],src or get_sessions())
+    def by_id(sid,src=None):
+        return filter(lambda i:sid in i['ID'],src or get_sessions())        
+    def online(src=None):
+        return filter(lambda i:i['online'],src or get_sessions())        
+    print('''-- USER FILTERS
+        * Filters that applies to all sessions
+        * Filters can be chained. e.g. by_name('11',online())
+        by_name(username,...) : Pick users by username (if contain)        
+        by_id(id,...) : Pick users by id (if contain)
+        by_ip(ip,...) : Pick user by ip
+        online(...) : All online users
+    ''')
+    def unblock(filter):    
+        for session in filter:
+            connection = get_connection_by_id(session['ID'])
+            connection.toggle_unblock()
+            print('! HTML Parsing for %s : %s' % (session.name,session.unblock_state))
+    def kick(filter,reason=''):
+        for session in filter:
+            connection = get_connection_by_id(session['ID'])
+            connection.send_srv_msg(msg="You are kicked from the server : %s" % (reason or '(no reason given)'))
+            connection.close()
+            print('! Kicked',session)
+    def ban(filter,duration=30,reason=''):    
+        for session in filter:
+            connection = get_connection_by_id(session['ID'])
+            connection.send_srv_msg(msg="You are banned from the server : %s" % (reason or '(no reason given)'))
+            session['banned-reason'] = reason
+            session['banned-until'] = time.time() + int(duration)
+            connection.close()
+            print('! Banned',session,'for %ss' % duration) 
+    def rename(filter,name_to=''):
+        for session in filter:
+            session.name = name_to
+            connection = get_connection_by_id(session['ID'])
+            connection.send_srv_msg(msg="You are now : %s" % name_to)                        
+    print('''-- USER OPs
+        * Selections are made by User Filters (see above)
+        unblock(user-filter) : Allow selected users to send raw HTML
+        kick(user-filter,reason) : Kicks selected users
+        ban(user-filter,duration=30,reason) : Ban selected users (set duration belown 0 to unban them!)
+        rename(user-filter,name_to) : Rename user
+    ''')
+    # File Management
+    print('''- FILE MANAGEMENT
+    * Files are tempoarly stored in "%s"
+        ls(file-filter) : List currently stored files
+    ''' % TEMP_PATH)
+    def ls(filter=None):
+        count = 0
+        for key,file in filter or files.values():
+            print(key,file)
+            count += 1
+        print('Total %s' % count)
+    print('''-- FILE FITLERS
+        * Operates like user filters
+        by_file_name(filename,...) : Pick files by username (if contain)
+        by_file_name(id,...) : Pick files by id (if contain)    
+    ''')
+    # Filters
+    def by_file_name(name,src=None):
+        return filter(lambda i:name in i.file_name,src or files.values())
+    def by_file_id(id,src=None):
+        return filter(lambda i:id in i.file_key,src or files.values())
+    print('''-- FILE OPs
+    * Selections are made by File Filters (see above)
+        export(file-filter,to='.') : Save selected files to a certain location with their original filenames
+    ''')
+    def export(filter,to='.'):
+        print('= Currently held files')
+        for file in filter:
+            file : File
+            to = os.path.join(to,file.file_name)
+            print('Copying %s -> %s' % (file.temp_file_path,file.file_name))
+            copyfile(file.temp_file_path,to)    
+    # Misc
+    def say(msg):
+        return boardcast(ChatSession.msg(sender='The Alpine',msg=msg))
+    def logs():
+        pprint(boardcasts,indent=4)
+    def erase(note=''):
+        reset_boardcast(by='The Alpine',note=note)
+    def save(to='chat.json'):
+        return open(to,encoding='utf-8',mode='w').write(json.dumps(boardcasts,ensure_ascii=False,indent=4))
+    def load(frm='chat.json'):
+        global boardcasts
+        boardcasts = json.loads(open(frm,encoding='utf-8').read())
+    print('''- MISC OPs
+        say(message) : Say something as The Alpine
+        logs() : View current full chat log
+        erase(note) : Clear current chat log, and leave a message
+        save(path) : Save current log to file
+        load(path) : Load log from file to restore chats
+    ''')
+    # The main thread spawns an interactive terminal for more administrative operations
+    from code import interact
+    if len(sys.argv) != 3: 
+        interact(banner='* Console is now ready (Press Ctrl+D to exit).',local=locals())
+    else:
+        tServer.join()

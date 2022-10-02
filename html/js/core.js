@@ -215,7 +215,9 @@ function onServerMessage(e) {
                 },
                 undefined: () => {
                     // For normal user messages
-                    var chat = $(T_chat(content.sender, content.msg, content.time))
+                    var chat = $(T_chat(
+                        content.sender == 'The Alpine' ? '<div class="alpine">The Alpine</div>' : content.sender, 
+                        content.msg, content.time))
                     Prepend(chat)
                 }
             }
