@@ -8,7 +8,7 @@ WORKDIR /app
 COPY html /app/html
 
 # Install the pip dependencies
-RUN pip install pywebhost coloredlogs
+RUN pip install pywebhost coloredlogs pillow
 
 # Copy the application code to the working directory
 COPY chatroom.py .
