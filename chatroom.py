@@ -176,8 +176,8 @@ class ChatSession(WebsocketSession):
 
     command_whitelist = {
         'im': 'Rename yourself',
-        # 'unblock': 'Enable/Disable HTML Tags parsing',
-        # 'erase': 'Erase the chat log',
+        'unblock': 'Enable/Disable HTML Tags parsing',
+        'erase': 'Erase the chat log',
         'users':'Show other online users',    
         'end':'Disconnect from the server'
     }
