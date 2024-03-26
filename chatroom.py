@@ -158,18 +158,18 @@ class ChatSession(WebsocketSession):
             self.send_srv_msg(type='login',msg=self.name)            
         return True
 
-    def toggle_unblock(self, opt=None):
+    def unblock(self, opt=None):
         self.unblock_state = not self.unblock_state
-        self.send_srv_msg(msg='<success>Turned %s HTML Tags</success>' % ['on','off'][not self.unblock_state])        
+        self.send_srv_msg(msg='<success>Turned %s HTML Tags.</success>' % ['on','off'][not self.unblock_state])        
         return True
 
     def users(self, opt=None):
         self.send_srv_msg(type='users', msg=self.online_users)
         return True
-
-    @staticmethod
-    def erase(self, note):
+    
+    def erase(self, note=''):
         reset_boardcast(by=self.name,note=note)
+        return True
 
     def end(self,opt):
         return self.close() or True
@@ -387,10 +387,10 @@ if __name__ == '__main__':
         by_ip(ip,...) : Pick user by ip
         online(...) : All online users
     ''')
-    def unblock(filter):    
+    def unblock(filter=online):    
         for session in filter:
             connection = get_connection_by_id(session['ID'])
-            connection.toggle_unblock()
+            connection.unblock()
             print('! HTML Parsing for %s : %s' % (session.name,session.unblock_state))
     def kick(filter,reason=''):
         for session in filter:
