@@ -17,4 +17,4 @@ COPY chatroom.py .
 EXPOSE 3300
 
 # Set the entrypoint command to run the Python application
-CMD ["python", "chatroom.py","3300","no-interact"]
+CMD ["python", "chatroom.py","80","no-interact"]
