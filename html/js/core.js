@@ -100,6 +100,20 @@ function connect() {
     })
 }
 
+function insertTag(tag, suffix){
+    var posBegin = $('#messagePlane').prop('selectionStart')
+    var posEnd  = $('#messagePlane').prop('selectionEnd')
+    var text = $('#messagePlane').val()
+    var start = text.substring(0, posBegin)
+    var content = text.substring(posBegin, posEnd)
+    var end = text.substring(posEnd)
+    content = `<${tag}>` + content + `</${tag}>`    
+    text = start + content + end
+    $('#messagePlane').focus()
+    $('#messagePlane').val(text)
+    $('#messagePlane').prop('selectionStart', posBegin)
+    $('#messagePlane').prop('selectionEnd', posBegin + content.length)    
+}
 function onServerMessage(e) {
     var content = JSON.parse(e.data)
     var sender_router = {

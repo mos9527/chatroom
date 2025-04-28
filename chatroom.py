@@ -1,4 +1,4 @@
-from asyncore import read
+#from asyncore import read
 from datetime import datetime
 from http import HTTPStatus
 import json
@@ -17,21 +17,31 @@ import coloredlogs,os,pywebhost,mimetypes,time,http,logging,base64,sys
 coloredlogs.DEFAULT_LOG_FORMAT='%(hostname)s [%(name)s] %(asctime)s - %(message)s'
 coloredlogs.install(20)
 # For coloring logs
-port = int(sys.argv[1]) if len(sys.argv) >= 2 else 3300
-server = PyWebHost(('', port))
-TEMP_PATH = 'temp'
+import argparse
+parser = argparse.ArgumentParser(description='Chatroom server')
+parser.add_argument('-p', '--port', type=int, default=3300,
+                    help='Port to run the server on (default: 3300)')
+parser.add_argument('-t', '--temp', type=str, default='temp',
+                    help='Path to temporary file storage (default: temp)')
+parser.add_argument('--no-interact', action='store_true',help='Disable interactive CLI')
+args = parser.parse_args()
+port = args.port
+TEMP_PATH = args.temp
+server = PyWebHost(('0.0.0.0', port))
 def time_string():
     return datetime.now().strftime('%m-%d %H:%M:%S')
 if not os.path.exists(TEMP_PATH):os.makedirs(TEMP_PATH)
-# Clearing temp
-for f in os.listdir(TEMP_PATH):
-    fullpath = os.path.join(TEMP_PATH,f)
-    if os.path.isfile(fullpath):
-        logging.warning('Removing temp file %s' % f)
-        try:
-            os.remove(fullpath)            
-        except IOError:
-            logging.error('Cannot remove file %s' % f)
+def clear_temp():
+    # Clearing temp
+    for f in os.listdir(TEMP_PATH):
+        fullpath = os.path.join(TEMP_PATH,f)
+        if os.path.isfile(fullpath):
+            logging.warning('Removing temp file %s' % f)
+            try:
+                os.remove(fullpath)            
+            except IOError:
+                logging.error('Cannot remove file %s' % f)
+clear_temp()
 class File():
     def __init__(self,temp_file_path,file_size,file_name,file_type,object_type,file_key='') -> None:
         self.temp_file_path = temp_file_path
@@ -131,7 +141,7 @@ class ChatSession(WebsocketSession):
     @property
     def unblock_state(self):
         if not 'unblock_state' in self.keys():
-            self.unblock_state = False # not unblocked
+            self.unblock_state = True # unblocked
         return self['unblock_state']
     @unblock_state.setter
     def unblock_state(self, newstate):
@@ -168,6 +178,7 @@ class ChatSession(WebsocketSession):
         return True
     
     def erase(self, note=''):
+        clear_temp()
         reset_boardcast(by=self.name,note=note)
         return True
 
@@ -471,7 +482,7 @@ if __name__ == '__main__':
     ''')
     # The main thread spawns an interactive terminal for more administrative operations
     from code import interact
-    if len(sys.argv) != 3: 
+    if not args.no_interact:
         interact(banner='* Console is now ready (Press Ctrl+D to exit).',local=locals())
     else:
         tServer.join()

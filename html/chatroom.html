@@ -114,6 +114,15 @@
     <nav class="toast-header"><i class="fas fa-bullhorn"></i><div id="announce" class="p-1"></div></nav>
     <div class="collapse fixed-bottom" id="messageInput">
         <div class="card card-body">
+            <div class="input-group mb-2" role="group">
+                <button type="button" class="btn" onclick="insertTag('b')"><b>B</b></button>
+                <button type="button" class="btn" onclick="insertTag('i')"><i>I</i></button>
+                <button type="button" class="btn" onclick="insertTag('u')"><u>U</u></button>
+                <button type="button" class="btn" onclick="insertTag('h1')">H1</button>
+                <button type="button" class="btn" onclick="insertTag('code')"><code>Code</code></button>                    
+                <button type="button" class="btn" onclick="insertTag('p style=\'font-family: Ink Free\'','p')">Ink</button>
+                <button type="button" class="btn" onclick="insertTag('p style=\'color: red\'','p')">Red</button>
+            </div>
             <div class="input-group mb-3">
                 <textarea type="text" class="form-control" placeholder="Message" id="messagePlane"></textarea>
                 <div class="input-group-append">
